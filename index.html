@@ -24,7 +24,7 @@
       background: var(--bg);
       color: var(--text);
     }
-    .container { max-width: 1040px; margin: 0 auto; }
+    .container { max-width: 1060px; margin: 0 auto; }
     header {
       display: flex;
       flex-wrap: wrap;
@@ -58,7 +58,7 @@
     }
     .grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
       gap: 12px;
       margin-bottom: 20px;
     }
@@ -70,7 +70,24 @@
     }
     .stat-label { font-size: 11px; color: var(--muted); text-transform: uppercase; }
     .stat-val { font-size: 22px; font-weight: 700; margin-top: 4px; }
-    .section-title { font-size: 15px; margin: 18px 0 10px; color: #e2e8f0; }
+    .section-title { font-size: 15px; margin: 20px 0 10px; color: #e2e8f0; font-weight: 600; }
+    .insights-box {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 16px;
+      margin-bottom: 20px;
+      display: grid;
+      gap: 8px;
+    }
+    .insight-line {
+      font-size: 13.5px;
+      color: #e2e8f0;
+      padding: 6px 10px;
+      background: rgba(15, 23, 42, 0.55);
+      border-radius: 6px;
+      border-left: 3px solid var(--accent);
+    }
     table {
       width: 100%;
       border-collapse: collapse;
@@ -78,6 +95,7 @@
       border-radius: 10px;
       overflow: hidden;
       font-size: 13px;
+      margin-bottom: 18px;
     }
     th, td {
       padding: 10px 12px;
@@ -95,7 +113,7 @@
     .due { background: rgba(239, 68, 68, 0.2); color: #fca5a5; }
     .soon { background: rgba(245, 158, 11, 0.2); color: #fcd34d; }
     .ok { background: rgba(34, 197, 94, 0.2); color: #86efac; }
-    .empty { padding: 24px; text-align: center; color: var(--muted); }
+    .empty { padding: 20px; text-align: center; color: var(--muted); }
   </style>
 </head>
 <body>
@@ -109,6 +127,9 @@
     </header>
 
     <div class="controls">
+      <select id="month-filter" onchange="renderDashboard()">
+        <option value="ALL">All Months</option>
+      </select>
       <select id="city-filter" onchange="renderDashboard()">
         <option value="ALL">All Cities</option>
         <option value="Mumbai">Mumbai</option>
@@ -124,17 +145,17 @@
         <option value="JioMart">JioMart</option>
         <option value="Amazon India">Amazon India</option>
       </select>
-      <input type="text" id="search-input" placeholder="Search product..." oninput="renderDashboard()" />
+      <input type="text" id="search-input" placeholder="Search product (e.g. milk, detergent)..." oninput="renderDashboard()" />
     </div>
 
     <div class="grid">
       <div class="stat">
-        <div class="stat-label">Synced Items</div>
+        <div class="stat-label">Filtered Orders</div>
         <div class="stat-val" id="stat-total">0</div>
       </div>
       <div class="stat">
-        <div class="stat-label">Orders This Month</div>
-        <div class="stat-val" id="stat-month">0</div>
+        <div class="stat-label">Milk Orders (Selected)</div>
+        <div class="stat-val" id="stat-milk" style="color:#38bdf8;">0</div>
       </div>
       <div class="stat">
         <div class="stat-label">Due for Reorder</div>
@@ -146,13 +167,15 @@
       </div>
     </div>
 
-    <div class="section-title">Smart Reorder Predictions & Monthly Frequency</div>
+    <div class="section-title" id="summary-heading">Monthly Order Summary</div>
+    <div class="insights-box" id="monthly-insights"></div>
+
+    <div class="section-title">Smart Reorder Predictions</div>
     <table>
       <thead>
         <tr>
           <th>Product</th>
-          <th>This Month</th>
-          <th>All Time</th>
+          <th>Orders in Selected Period</th>
           <th>Last Store</th>
           <th>Last Bought</th>
           <th>Status</th>
@@ -184,6 +207,36 @@
     const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     let allRows = [];
 
+    function getMonthKey(dateStr) {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return null;
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      return `${y}-${m}`;
+    }
+
+    function formatMonthLabel(monthKey) {
+      if (!monthKey || monthKey === "ALL") return "All Months";
+      const [y, m] = monthKey.split("-");
+      const d = new Date(Number(y), Number(m) - 1, 1);
+      return d.toLocaleDateString("en-IN", { month: "long", year: "numeric" });
+    }
+
+    function getCanonicalGroup(name) {
+      const n = (name || "").toLowerCase();
+      if (/(milk|doodh)/.test(n)) return "Milk";
+      if (/(curd|buttermilk|paneer)/.test(n)) return "Curd / Paneer";
+      if (/(bread)/.test(n)) return "Bread";
+      if (/(detergent|tide|surf|rin)/.test(n)) return "Detergent";
+      if (/(vim|dishwash)/.test(n)) return "Dishwash";
+      if (/(soap|dettol)/.test(n)) return "Bathing Soap";
+      if (/(oil|sunflower|ghee)/.test(n)) return "Cooking Oil / Ghee";
+      if (/(onion|potato|tomato)/.test(n)) return "Vegetables";
+      if (/(turmeric|haldi|salt|sugar|hing|sabudana|sattu|chana|atta|rice|dal)/.test(n)) return "Kitchen Staples";
+      if (/(biscuit|cookies|monaco|krack jack|good day|nutrichoice|little hearts)/.test(n)) return "Biscuits & Snacks";
+      return name.trim();
+    }
+
     function estimateCycleDays(name) {
       const n = name.toLowerCase();
       if (/(milk|bread|curd|paneer)/.test(n)) return 2;
@@ -193,12 +246,18 @@
       return 14;
     }
 
-    function isSameCalendarMonth(dateStr) {
-      const d = new Date(dateStr);
-      const now = new Date();
-      return !isNaN(d.getTime()) &&
-        d.getFullYear() === now.getFullYear() &&
-        d.getMonth() === now.getMonth();
+    function populateMonthDropdown() {
+      const monthSet = new Set();
+      allRows.forEach((r) => {
+        const k = getMonthKey(r.purchased_at);
+        if (k) monthSet.add(k);
+      });
+      const sorted = Array.from(monthSet).sort((a, b) => b.localeCompare(a));
+      const sel = document.getElementById("month-filter");
+      const prev = sel.value;
+      sel.innerHTML = `<option value="ALL">All Months</option>` +
+        sorted.map((k) => `<option value="${k}">${formatMonthLabel(k)}</option>`).join("");
+      if (sorted.includes(prev)) sel.value = prev;
     }
 
     async function loadPurchases() {
@@ -218,15 +277,18 @@
 
       allRows = data || [];
       statusEl.textContent = `Connected · ${allRows.length} records loaded`;
+      populateMonthDropdown();
       renderDashboard();
     }
 
     function renderDashboard() {
+      const monthVal = document.getElementById("month-filter").value;
       const city = document.getElementById("city-filter").value;
       const platform = document.getElementById("platform-filter").value;
       const query = document.getElementById("search-input").value.trim().toLowerCase();
 
       const filtered = allRows.filter((r) => {
+        if (monthVal !== "ALL" && getMonthKey(r.purchased_at) !== monthVal) return false;
         if (city !== "ALL" && (r.city || "").toLowerCase() !== city.toLowerCase()) return false;
         if (platform !== "ALL" && (r.platform || "").toLowerCase() !== platform.toLowerCase()) return false;
         if (query && !(r.product_name || "").toLowerCase().includes(query)) return false;
@@ -234,14 +296,44 @@
       });
 
       document.getElementById("stat-total").textContent = filtered.length;
-      const monthOrdersCount = filtered.filter((r) => isSameCalendarMonth(r.purchased_at)).length;
-      document.getElementById("stat-month").textContent = monthOrdersCount;
+      const milkCount = filtered.filter((r) => getCanonicalGroup(r.product_name) === "Milk").length;
+      document.getElementById("stat-milk").textContent = milkCount;
 
       const spend = filtered.reduce((acc, r) => acc + (parseFloat(r.price) || 0), 0);
       document.getElementById("stat-spend").textContent = "₹" + Math.round(spend).toLocaleString("en-IN");
 
-      const grouped = new Map();
+      // Group by Smart Category (e.g. Milk, Detergent, Dishwash) for readable monthly sentences
+      const periodLabel = monthVal === "ALL" ? "All recorded months" : `In ${formatMonthLabel(monthVal)}`;
+      document.getElementById("summary-heading").textContent = `Order Frequency Summary (${formatMonthLabel(monthVal)})`;
+
+      const catMap = new Map();
       filtered.forEach((r) => {
+        const cat = getCanonicalGroup(r.product_name);
+        if (!catMap.has(cat)) catMap.set(cat, { count: 0, spend: 0 });
+        const entry = catMap.get(cat);
+        entry.count += 1;
+        entry.spend += parseFloat(r.price) || 0;
+      });
+
+      const sortedCats = Array.from(catMap.entries()).sort((a, b) => b[1].count - a[1].count);
+      const insightsEl = document.getElementById("monthly-insights");
+      insightsEl.innerHTML = sortedCats.length
+        ? sortedCats.slice(0, 12).map(([cat, info]) => {
+            const timesWord = info.count === 1 ? "1 time" : `${info.count} times`;
+            return `<div class="insight-line">${periodLabel}, you ordered <strong>${cat}</strong> <strong>${timesWord}</strong> (Total: ₹${Math.round(info.spend).toLocaleString("en-IN")})</div>`;
+          }).join("")
+        : `<div class="empty">No orders found for ${formatMonthLabel(monthVal)}.</div>`;
+
+      // Predictions table (always based on city/platform/search across history so cycle predictions stay accurate)
+      const predRows = allRows.filter((r) => {
+        if (city !== "ALL" && (r.city || "").toLowerCase() !== city.toLowerCase()) return false;
+        if (platform !== "ALL" && (r.platform || "").toLowerCase() !== platform.toLowerCase()) return false;
+        if (query && !(r.product_name || "").toLowerCase().includes(query)) return false;
+        return true;
+      });
+
+      const grouped = new Map();
+      predRows.forEach((r) => {
         const key = (r.product_name || "").trim().toLowerCase();
         if (!key) return;
         if (!grouped.has(key)) grouped.set(key, []);
@@ -252,8 +344,9 @@
       grouped.forEach((items) => {
         items.sort((a, b) => new Date(b.purchased_at) - new Date(a.purchased_at));
         const latest = items[0];
-        const thisMonthCount = items.filter((it) => isSameCalendarMonth(it.purchased_at)).length;
-        const allTimeCount = items.length;
+        const periodCount = monthVal === "ALL"
+          ? items.length
+          : items.filter((it) => getMonthKey(it.purchased_at) === monthVal).length;
         let cycleDays = estimateCycleDays(latest.product_name);
 
         if (items.length >= 2) {
@@ -269,30 +362,29 @@
 
         const daysSince = (Date.now() - new Date(latest.purchased_at).getTime()) / 86400000;
         const daysLeft = Math.round(cycleDays - daysSince);
-        predictions.push({ latest, thisMonthCount, allTimeCount, daysLeft });
+        predictions.push({ latest, periodCount, daysLeft });
       });
 
-      predictions.sort((a, b) => b.thisMonthCount - a.thisMonthCount || a.daysLeft - b.daysLeft);
+      predictions.sort((a, b) => b.periodCount - a.periodCount || a.daysLeft - b.daysLeft);
       const dueCount = predictions.filter((p) => p.daysLeft <= 2).length;
       document.getElementById("stat-due").textContent = dueCount;
 
       const reorderBody = document.getElementById("reorder-body");
       reorderBody.innerHTML = predictions.length
-        ? predictions.slice(0, 40).map(({ latest, thisMonthCount, allTimeCount, daysLeft }) => {
+        ? predictions.slice(0, 35).map(({ latest, periodCount, daysLeft }) => {
             let badge = `<span class="badge ok">In ${daysLeft}d</span>`;
             if (daysLeft <= 0) badge = `<span class="badge due">Due Today</span>`;
             else if (daysLeft <= 2) badge = `<span class="badge soon">Due in ${daysLeft}d</span>`;
-            const monthLabel = thisMonthCount === 1 ? "1 time this month" : `${thisMonthCount} times this month`;
+            const countText = periodCount === 1 ? "Ordered 1 time" : `Ordered ${periodCount} times`;
             return `<tr>
               <td>${latest.product_name}</td>
-              <td><strong>${monthLabel}</strong></td>
-              <td>${allTimeCount}x</td>
+              <td><strong>${countText}</strong></td>
               <td>${latest.platform || "-"}</td>
               <td>${new Date(latest.purchased_at).toLocaleDateString("en-IN")}</td>
               <td>${badge}</td>
             </tr>`;
           }).join("")
-        : `<tr><td colspan="6" class="empty">No items match the selected filter.</td></tr>`;
+        : `<tr><td colspan="5" class="empty">No items match the selected filter.</td></tr>`;
 
       const historyBody = document.getElementById("history-body");
       historyBody.innerHTML = filtered.length
