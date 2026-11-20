@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Smart Cart — Spend, Prices & Reorders</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    :root {
+      --bg: #0f172a; --card: #1e293b; --border: #334155; --text: #f8fafc; --muted: #94a3b8;
+      --accent: #22c55e; --warn: #f59e0b; --danger: #ef4444; --blue: #38bdf8;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 18px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); }
+    .container { max-width: 1100px; margin: 0 auto; }
+    header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; }
+    h1 { margin: 0; font-size: 22px; color: var(--accent); }
+    .sub { margin: 2px 0 0; font-size: 13px; color: var(--muted); }
+    .controls { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; align-items: center; }
+    select, input, button { padding: 9px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--card); color: var(--text); font-size: 13px; }
+    button { cursor: pointer; }
+    button.primary { background: var(--accent); color: #052e16; border: none; font-weight: 600; }
+    button.small { padding: 5px 9px; font-size: 12px; }
+    label.check { font-size: 13px; color: var(--muted); display: flex; gap: 6px; align-items: center; }
+    .syncs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+    .sync { font-size: 12px; padding: 5px 10px; border-radius: 999px; background: var(--card); border: 1px solid var(--border); color: var(--muted); }
+    .sync b { color: var(--text); }
+    .sync.stale { border-color: var(--warn); }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-bottom: 18px; }
+    .stat { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
+    .stat-label { font-size: 12px; color: var(--muted); }
+    .stat-val { font-size: 24px; font-weight: 700; margin-top: 4px; }
+    .stat-note { font-size: 12px; color: var(--muted); margin-top: 4px; }
+    .section-title { font-size: 16px; margin: 24px 0 10px; color: #e2e8f0; font-weight: 600; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
+    .panel { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin-bottom: 14px; }
+    .two { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
+    .panel h3 { margin: 0 0 10px; font-size: 13px; color: var(--muted); font-weight: 600; }
+    .bar-row { display: grid; grid-template-columns: 120px 1fr 80px; gap: 8px; align-items: center; font-size: 12.5px; padding: 3px 0; cursor: default; }
+    .bar-row.click { cursor: pointer; }
+    .bar-row .lbl { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .bar-track { background: rgba(15,23,42,.7); border-radius: 4px; height: 12px; overflow: hidden; }
+    .bar-fill { height: 100%; background: var(--accent); border-radius: 4px; }
+    .bar-row.sel .bar-fill { background: var(--blue); }
+    .bar-row .val { text-align: right; color: #e2e8f0; }
+    .tw { overflow-x: auto; margin-bottom: 14px; border-radius: 10px; }
+    table { width: 100%; border-collapse: collapse; background: var(--card); font-size: 13px; min-width: 620px; }
+    th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; }
+    th { color: var(--muted); font-size: 12px; font-weight: 600; }
+    .badge { display: inline-block; padding: 3px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+    .due { background: rgba(239,68,68,.2); color: #fca5a5; }
+    .soon { background: rgba(245,158,11,.2); color: #fcd34d; }
+    .ok { background: rgba(34,197,94,.2); color: #86efac; }
+    .mute { background: rgba(148,163,184,.18); color: var(--muted); }
+    .empty { padding: 18px; text-align: center; color: var(--muted); }
+    .progress { height: 10px; background: rgba(15,23,42,.7); border-radius: 6px; overflow: hidden; margin-top: 8px; }
+    .progress > div { height: 100%; background: var(--accent); }
+    .progress.over > div { background: var(--danger); }
+    .inline { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .meter { height: 10px; min-width: 120px; background: rgba(15,23,42,.8); border-radius: 6px; overflow: hidden; }
+    .meter > div { height: 100%; border-radius: 6px; transition: width .4s; }
+    .meter .g { background: var(--accent); } .meter .a { background: var(--warn); } .meter .r { background: var(--danger); }
+    .tag { font-size: 11px; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 1px 7px; margin-left: 6px; white-space: nowrap; }
+    .legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-top: 6px; }
+    .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 4px; }
+    svg text { fill: #94a3b8; font-size: 10px; }
+    @media (max-width: 640px) { body { padding: 12px; } .bar-row { grid-template-columns: 90px 1fr 70px; } }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div>
+        <h1>Smart Cart</h1>
+        <p class="sub" id="conn-status">Connecting to Supabase...</p>
+      </div>
+      <button class="primary" onclick="loadPurchases()">Refresh orders</button>
+    </header>
+
+    <div class="syncs" id="syncs"></div>
+
+    <div class="controls">
+      <select id="month-filter"><option value="ALL">All months</option></select>
+      <select id="city-filter"><option value="ALL">All cities</option></select>
+      <select id="platform-filter"><option value="ALL">All stores</option></select>
+      <select id="cat-filter"><option value="ALL">All categories</option></select>
+      <input type="text" id="search-input" placeholder="Search product..." />
+      <label class="check"><input type="checkbox" id="grocery-only" checked /> Groceries only</label>
+      <button onclick="exportCsv()">Export CSV</button>
+    </div>
+
+    <div class="grid">
+      <div class="stat"><div class="stat-label">Orders</div><div class="stat-val" id="stat-orders">0</div><div class="stat-note" id="stat-items"></div></div>
+      <div class="stat"><div class="stat-label">Spend</div><div class="stat-val" id="stat-spend">₹0</div><div class="stat-note" id="stat-noprice"></div></div>
+      <div class="stat"><div class="stat-label">Due for reorder</div><div class="stat-val" id="stat-due" style="color:var(--warn)">0</div><div class="stat-note">Items bought 2+ times</div></div>
+      <div class="stat">
+        <div class="stat-label" id="budget-label">Monthly budget</div>
+        <div class="inline" style="margin-top:6px"><input type="number" id="budget-input" placeholder="₹ limit" style="width:110px" /><span id="budget-text" class="stat-note"></span></div>
+        <div class="progress" id="budget-bar"><div style="width:0%"></div></div>
+      </div>
+    </div>
+
+    <div class="section-title">Where the money goes <span class="sub" id="spend-hint"></span></div>
+    <div class="two">
+      <div class="panel"><h3>By month (tap a month to filter)</h3><div id="by-month"></div></div>
+      <div class="panel"><h3>By category</h3><div id="by-cat"></div></div>
+      <div class="panel"><h3>By store</h3><div id="by-store"></div></div>
+      <div class="panel"><h3>By city</h3><div id="by-city"></div></div>
+    </div>
+
+    <div class="section-title">
+      Reorder reminders
+      <span class="inline">
+        <label class="check"><input type="checkbox" id="show-once" /> Show unsorted one-off items</label>
+        <input type="tel" id="wa-number" placeholder="WhatsApp no. e.g. 919876543210" style="width:210px" />
+        <button class="small" onclick="copyList()">Copy list</button>
+        <button class="small primary" onclick="whatsappList()">Send to WhatsApp</button>
+      </span>
+    </div>
+    <div class="sub" style="margin-bottom:8px">Daily items (milk, bread) and refills (detergent, toothpaste, sanitary pads) get a stock bar. One-time buys (weighing machine, cables) never get reminders.</div>
+    <div class="tw"><table>
+      <thead><tr><th>Product</th><th>Stock left</th><th>Refill every</th><th>Last bought</th><th></th></tr></thead>
+      <tbody id="reorder-body"></tbody>
+    </table></div>
+
+    <div class="section-title">Price comparison <span class="sub">Zepto, Blinkit, JioMart, Instamart. Amazon only has order totals, so it's left out.</span></div>
+    <div class="panel">
+      <select id="price-pick" style="max-width:100%"></select>
+      <div id="price-out" style="margin-top:12px"></div>
+    </div>
+
+    <div class="section-title">Purchase history <span class="sub" id="hist-count"></span></div>
+    <div class="tw"><table>
+      <thead><tr><th>Product</th><th>Qty</th><th>Price</th><th>Store</th><th>City</th><th>Date</th></tr></thead>
+      <tbody id="history-body"></tbody>
+    </table></div>
+  </div>
+
+  <script>
+    const SUPABASE_URL = "https://ximnejiileskvdymiybv.supabase.co";
+    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhpbW5lamlpbGVza3ZkeW1peWJ2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTUwMTM3NTMsImV4cCI6MjExMDU4OTc1M30.OIYYShNv96L7SDdTTo37l4LGiX-WJUGzXCQ7PH_ii5Q";
+
+    const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const $ = (id) => document.getElementById(id);
+    const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    const inr = (n) => "₹" + Math.round(n).toLocaleString("en-IN");
+    const num = (v) => parseFloat(v) || 0;
+    const STORE_COLORS = { "Zepto": "#a855f7", "Blinkit": "#facc15", "Swiggy Instamart": "#fb923c", "JioMart": "#38bdf8", "Amazon India": "#94a3b8" };
+
+    let allRows = [];
+    let selMonth = "ALL";
+    let reorderView = []; // rows currently shown in reorder table (for list export)
+
+    const store = {
+      get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch (_) { return d; } },
+      set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (_) {} }
+    };
+
+    /* ---------------------------------------------------------------- classification */
+    const NON_GROCERY = /flight|ticket|booking|bill payment|electricity|recharge|cable|charger|lightning|type c|usb|power ?bank|weighing scale|headphone|earphone|mobile|laptop|cutter|knife|plug|adapter/i;
+
+    function categorize(name) {
+      const n = (name || "").toLowerCase();
+      if (NON_GROCERY.test(n) || DURABLE_RX.test(n)) return "Non-grocery";
+      if (/(\bcurd\b|buttermilk|paneer|\blassi\b|\bdahi\b|yogurt|\bcheese\b|\bbutter\b)/.test(n)) return "Curd / Paneer";
+      if (/(dairy milk|chocolate|cadbury|kitkat|5 star|munch)/.test(n)) return "Chocolates";
+      if (/(milk|doodh)/.test(n)) return "Milk";
+      if (/(biscuit|cookies|monaco|krack jack|good day|nutrichoice|little hearts|bourbon|marie|hide & seek|chips|namkeen|kurkure)/.test(n)) return "Biscuits & Snacks";
+      if (/\bbread\b|\bpav\b|\bbun\b/.test(n)) return "Bread";
+      if (/\b(detergent|tide|surf|rin|ariel|comfort)\b/.test(n)) return "Detergent";
+      if (/\b(vim|dishwash)\b/.test(n)) return "Dishwash";
+      if (/(soap|dettol|lifebuoy|body wash)/.test(n)) return "Bathing Soap";
+      if (/(toothpaste|colgate|shampoo|whisper|sanitary|face wash|deodorant)/.test(n)) return "Personal care";
+      if (/\b(oil|sunflower|ghee)\b/.test(n)) return "Cooking Oil / Ghee";
+      if (/\b(onion|potato|tomato|banana|apple|fruit|vegetable|coriander|lemon)\b/.test(n)) return "Vegetables & Fruit";
+      if (/(7 up|thums up|coca|pepsi|sprite|maaza|juice|cola|soft drink|water bottle|bisleri|tea\b|coffee)/.test(n)) return "Beverages";
+      if (/(turmeric|haldi|salt|sugar|\bhing\b|sabudana|sago|sattu|chana|atta|flour|\brice\b|\bdal\b|masala|spice)/.test(n)) return "Kitchen Staples";
+      return "Other";
+    }
+
+    // same product across stores/spellings: "Gokul Full cream milk 500ml (Classic)" == "Gokul Full Cream Milk | Pouch"
+    function normKey(name) {
+      const n = (name || "").toLowerCase().split("|")[0]
+        .replace(/\([^)]*\)/g, " ")
+        .replace(/\d+(\.\d+)?\s*(kg|g|gm|gms|ml|l|ltr|pcs?|pack|x)\b/g, " ")
+        .replace(/[^a-z\s]/g, " ").replace(/\s+/g, " ").trim();
+      return n.split(" ").slice(0, 4).join(" ") || (name || "").toLowerCase();
+    }
+
+    const qtyCount = (q) => { const m = String(q || "").match(/^\s*(\d+)/); return m ? Math.max(1, parseInt(m[1], 10)) : 1; };
+    const packOf = (q) => { const m = String(q || "").match(/×\s*([\d.]+\s*[a-zA-Z]+)/); return m ? m[1].replace(/\s+/g, "").toLowerCase() : ""; };
+    const monthKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    const dayKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    const monthLabel = (k) => k === "ALL" ? "All months" : new Date(+k.split("-")[0], +k.split("-")[1] - 1, 1).toLocaleDateString("en-IN", { month: "short", year: "numeric" });
+    const fmtDate = (d) => d.toLocaleDateString("en-IN");
+
+    /* ---------------------------------------------------------------- data prep */
+    function prepare(rows) {
+      // Amazon stores the ORDER total on every item; split it across the order's items so spend isn't multiplied
+      const orders = new Map();
+      rows.forEach((r) => {
+        const id = (r.platform || "") + "|" + (r.external_order_id || r.id);
+        if (!orders.has(id)) orders.set(id, []);
+        orders.get(id).push(r);
+      });
+      rows.forEach((r) => {
+        r._date = new Date(r.purchased_at);
+        r._month = isNaN(r._date) ? null : monthKey(r._date);
+        r._cat = categorize(r.product_name);
+        r._key = normKey(r.product_name);
+        r._qty = qtyCount(r.quantity);
+        r._pack = packOf(r.quantity);
+        r._order = (r.platform || "") + "|" + (r.external_order_id || r.id);
+        const group = orders.get(r._order);
+        r._spend = r.platform === "Amazon India" ? Math.max(...group.map((x) => num(x.price))) / group.length : num(r.price);
+      });
+      return rows.filter((r) => r._month);
+    }
+
+    async function loadPurchases() {
+      $("conn-status").textContent = "Syncing latest rows...";
+      const { data, error } = await db.from("purchases").select("*").order("purchased_at", { ascending: false }).limit(2000);
+      if (error) { $("conn-status").textContent = "Database error: " + error.message; return; }
+      allRows = prepare(data || []);
+      $("conn-status").textContent = `Connected · ${allRows.length} records loaded`;
+      fillFilters();
+      render();
+    }
+
+    function fillOptions(id, values, allLabel) {
+      const sel = $(id), prev = sel.value;
+      sel.innerHTML = `<option value="ALL">${allLabel}</option>` + values.map((v) => `<option value="${esc(v)}">${esc(v)}</option>`).join("");
+      if (values.includes(prev)) sel.value = prev;
+    }
+    function fillFilters() {
+      const months = [...new Set(allRows.map((r) => r._month))].sort().reverse();
+      const sel = $("month-filter"), prev = sel.value;
+      sel.innerHTML = `<option value="ALL">All months</option>` + months.map((k) => `<option value="${k}">${monthLabel(k)}</option>`).join("");
+      if (months.includes(prev)) sel.value = prev;
+      fillOptions("city-filter", [...new Set(allRows.map((r) => r.city).filter(Boolean))].sort(), "All cities");
+      fillOptions("platform-filter", [...new Set(allRows.map((r) => r.platform).filter(Boolean))].sort(), "All stores");
+      fillOptions("cat-filter", [...new Set(allRows.map((r) => r._cat))].sort(), "All categories");
+    }
+
+    /* ---------------------------------------------------------------- helpers: charts */
+    function bars(elId, entries, opts = {}) {
+      const el = $(elId);
+      if (!entries.length) { el.innerHTML = `<div class="empty">No data for these filters.</div>`; return; }
+      const max = Math.max(...entries.map((e) => e[1])) || 1;
+      el.innerHTML = entries.map(([label, val, key]) => `
+        <div class="bar-row ${opts.click ? "click" : ""} ${opts.selected === key ? "sel" : ""}" data-key="${esc(key ?? "")}">
+          <div class="lbl" title="${esc(label)}">${esc(label)}</div>
+          <div class="bar-track"><div class="bar-fill" style="width:${Math.max(2, (val / max) * 100)}%"></div></div>
+          <div class="val">${inr(val)}</div>
+        </div>`).join("");
+    }
+    const sumBy = (rows, fn) => { const m = new Map(); rows.forEach((r) => m.set(fn(r), (m.get(fn(r)) || 0) + r._spend)); return [...m.entries()].sort((a, b) => b[1] - a[1]); };
+
+    /* ---------------------------------------------------------------- render */
+    function baseFilter(r, { withMonth }) {
+      const city = $("city-filter").value, plat = $("platform-filter").value, cat = $("cat-filter").value;
+      const q = $("search-input").value.trim().toLowerCase();
+      if ($("grocery-only").checked && r._cat === "Non-grocery") return false;
+      if (withMonth && selMonth !== "ALL" && r._month !== selMonth) return false;
+      if (city !== "ALL" && r.city !== city) return false;
+      if (plat !== "ALL" && r.platform !== plat) return false;
+      if (cat !== "ALL" && r._cat !== cat) return false;
+      if (q && !(r.product_name || "").toLowerCase().includes(q)) return false;
+      return true;
+    }
+
+    function render() {
+      selMonth = $("month-filter").value;
+      const filtered = allRows.filter((r) => baseFilter(r, { withMonth: true }));
+      const noMonth = allRows.filter((r) => baseFilter(r, { withMonth: false }));
+
+      // KPIs
+      const orderIds = new Set(filtered.map((r) => r._order));
+      const spend = filtered.reduce((a, r) => a + r._spend, 0);
+      const unpriced = filtered.filter((r) => !num(r.price)).length;
+      $("stat-orders").textContent = orderIds.size;
+      $("stat-items").textContent = `${filtered.length} items`;
+      $("stat-spend").textContent = inr(spend);
+      $("stat-noprice").textContent = unpriced ? `${unpriced} items have no price yet (Instamart)` : "Amazon totals split across items";
+
+      // budget (selected month, or current month when "All months")
+      const bKey = selMonth === "ALL" ? monthKey(new Date()) : selMonth;
+      const budget = store.get("sc_budget", 0);
+      $("budget-input").value = budget || "";
+      const bSpend = noMonth.filter((r) => r._month === bKey).reduce((a, r) => a + r._spend, 0);
+      $("budget-label").textContent = `Budget · ${monthLabel(bKey)}`;
+      const pct = budget ? Math.min(100, (bSpend / budget) * 100) : 0;
+      $("budget-bar").className = "progress" + (budget && bSpend > budget ? " over" : "");
+      $("budget-bar").firstElementChild.style.width = pct + "%";
+      $("budget-text").textContent = budget ? `${inr(bSpend)} of ${inr(budget)}` : `${inr(bSpend)} spent`;
+
+      // charts
+      $("spend-hint").textContent = selMonth === "ALL" ? "all months" : monthLabel(selMonth);
+      const byMonth = sumBy(noMonth, (r) => r._month).sort((a, b) => b[0].localeCompare(a[0])).slice(0, 12).map(([k, v]) => [monthLabel(k), v, k]);
+      bars("by-month", byMonth, { click: true, selected: selMonth });
+      bars("by-cat", sumBy(filtered, (r) => r._cat).slice(0, 10).map(([k, v]) => [k, v, k]));
+      bars("by-store", sumBy(filtered, (r) => r.platform || "-").map(([k, v]) => [k, v, k]));
+      bars("by-city", sumBy(filtered, (r) => r.city || "-").map(([k, v]) => [k, v, k]));
+
+      renderReorder(noMonth);
+      renderSyncs();
+      renderPricePicker();
+      renderHistory(filtered);
+    }
+
+    /* ---------------------------------------------------------------- sync badges */
+    function renderSyncs() {
+      const latest = new Map();
+      allRows.forEach((r) => { const p = r.platform || "-"; if (!latest.has(p) || r._date > latest.get(p)) latest.set(p, r._date); });
+      $("syncs").innerHTML = [...latest.entries()].map(([p, d]) => {
+        const days = Math.floor((Date.now() - d) / 86400000);
+        return `<span class="sync ${days > 30 ? "stale" : ""}"><span class="dot" style="background:${STORE_COLORS[p] || "#64748b"}"></span><b>${esc(p)}</b> last order ${fmtDate(d)} (${days}d ago)</span>`;
+      }).join("");
+    }
+
+    /* ---------------------------------------------------------------- reorder */
+    const median = (a) => { const s = [...a].sort((x, y) => x - y), m = Math.floor(s.length / 2); return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+
+    /* item types: daily (milk, bread), refill (detergent, pads), durable (weighing machine) = never remind */
+    const DURABLE_RX = /machine|scale|cable|charger|lightning|type c|usb|power ?bank|headphone|earphone|knife|cutter|container|lunch ?box|broom|mop|bucket|hanger|extension|bulb|adapter|flask/i;
+    const SLOW_RX = /sanitary|whisper|stayfree|sofy|\bpads?\b|tampon|diaper|razor|batter(y|ies)|toothbrush/i;
+    const CAT_POLICY = {
+      "Milk": { kind: "daily", cycle: 2 }, "Bread": { kind: "daily", cycle: 3 }, "Curd / Paneer": { kind: "daily", cycle: 3 },
+      "Vegetables & Fruit": { kind: "daily", cycle: 5 }, "Biscuits & Snacks": { kind: "refill", cycle: 14 }, "Chocolates": { kind: "refill", cycle: 14 },
+      "Beverages": { kind: "refill", cycle: 10 }, "Cooking Oil / Ghee": { kind: "refill", cycle: 30 }, "Kitchen Staples": { kind: "refill", cycle: 30 },
+      "Detergent": { kind: "refill", cycle: 30 }, "Dishwash": { kind: "refill", cycle: 30 }, "Bathing Soap": { kind: "refill", cycle: 30 },
+      "Personal care": { kind: "refill", cycle: 30 }
+    };
+    const KIND_LABEL = { daily: "Daily", refill: "Refill", unknown: "Unsorted" };
+
+    function policyFor(name, cat, override) {
+      const base = CAT_POLICY[cat] || { kind: "unknown", cycle: null };
+      if (override === "durable") return { kind: "durable" };
+      if (override === "refill") return { kind: "refill", cycle: base.kind === "refill" ? base.cycle : 30, minCycle: 15 };
+      if (override === "daily") return { kind: "daily", cycle: base.kind === "daily" ? base.cycle : 3, minCycle: 1 };
+      if (cat === "Non-grocery" || DURABLE_RX.test(name || "")) return { kind: "durable" };
+      if (SLOW_RX.test(name || "")) return { kind: "refill", cycle: 30, minCycle: 25 }; // pads etc: never nag inside the first ~month
+      return { ...base, minCycle: base.kind === "daily" ? 1 : Math.round((base.cycle || 2) * 0.5) };
+    }
+
+    function renderReorder(rows) {
+      const snooze = store.get("sc_snooze", {}), bought = store.get("sc_bought", {}), kinds = store.get("sc_kind", {});
+      const groups = new Map();
+      rows.forEach((r) => { if (!groups.has(r._key)) groups.set(r._key, []); groups.get(r._key).push(r); });
+
+      const list = [];
+      groups.forEach((items, key) => {
+        items.sort((a, b) => b._date - a._date);
+        const latest = items[0];
+        const pol = policyFor(latest.product_name, latest._cat, kinds[key]);
+        if (pol.kind === "durable") return; // one-time buys never get reminders
+        const days = [...new Set(items.map((r) => dayKey(r._date)))].sort().reverse();
+        let last = latest._date.getTime();
+        if (bought[key] && bought[key] > last) last = bought[key];
+
+        let cycle = pol.cycle, observed = false;
+        if (days.length >= 2) {
+          const gaps = [];
+          for (let i = 0; i < days.length - 1; i++) gaps.push((new Date(days[i]) - new Date(days[i + 1])) / 86400000);
+          cycle = Math.max(pol.minCycle || 1, Math.round(median(gaps)) || 1); // observed habit, but never shorter than the item's floor
+          observed = true;
+        }
+        const since = (Date.now() - last) / 86400000;
+        let state = "once", left = null, daysLeft = null;
+        if (cycle) {
+          daysLeft = Math.round(cycle - since);
+          left = Math.max(0, Math.min(1, 1 - since / cycle));
+          const snoozed = snooze[key] && snooze[key] > Date.now();
+          state = snoozed ? "snoozed" : since > cycle * 3 + 14 ? "lapsed" : daysLeft <= 0 ? "due" : daysLeft <= 2 ? "soon" : "ok";
+        }
+        list.push({ key, name: latest.product_name, store: latest.platform, last, cycle, observed, kind: pol.kind, left, daysLeft, nDays: days.length, state });
+      });
+
+      const order = { due: 0, soon: 1, ok: 2, snoozed: 3, lapsed: 4, once: 5 };
+      list.sort((a, b) => order[a.state] - order[b.state] || (a.left ?? 2) - (b.left ?? 2) || b.nDays - a.nDays);
+      $("stat-due").textContent = list.filter((x) => x.state === "due" || x.state === "soon").length;
+
+      const showOnce = $("show-once").checked;
+      reorderView = list.filter((x) => showOnce || x.state !== "once");
+      const shown = reorderView.slice(0, 40);
+      $("reorder-body").innerHTML = shown.length ? shown.map((x) => {
+        let meter = `<span class="badge mute">Not enough history</span>`, note = "";
+        if (x.left !== null) {
+          const pct = Math.max(4, Math.round(x.left * 100));
+          const cls = x.state === "due" || x.state === "lapsed" ? "r" : x.state === "soon" || x.left <= 0.35 ? "a" : "g";
+          note = x.state === "due" ? (x.daysLeft === 0 ? "Order today" : `Overdue ${Math.abs(x.daysLeft)}d`)
+            : x.state === "soon" ? `Keep an eye: order in ~${x.daysLeft}d`
+            : x.state === "snoozed" ? "Snoozed"
+            : x.state === "lapsed" ? "Stopped buying?" : `~${x.daysLeft}d left`;
+          meter = `<div class="meter" title="${pct}% left"><div class="${x.state === "lapsed" ? "" : cls}" style="width:${x.state === "lapsed" ? 0 : pct}%"></div></div><div class="sub" style="margin-top:3px">${note}</div>`;
+        }
+        const act = `<button class="small" data-act="snooze" data-key="${esc(x.key)}">Snooze 3d</button>
+          <button class="small" data-act="got" data-key="${esc(x.key)}">Got it</button>
+          <button class="small" data-act="${x.kind === "unknown" ? "refill" : "durable"}" data-key="${esc(x.key)}">${x.kind === "unknown" ? "Track monthly" : "One-time item"}</button>`;
+        return `<tr><td>${esc(x.name.split("|")[0])}<span class="tag">${KIND_LABEL[x.kind]}</span></td><td>${meter}</td>
+          <td>${x.cycle ? "~" + x.cycle + "d" + (x.observed ? "" : " (estimate)") : "-"}</td>
+          <td>${fmtDate(new Date(x.last))} · ${esc(x.store || "-")}</td><td>${act}</td></tr>`;
+      }).join("") : `<tr><td colspan="5" class="empty">Nothing to track yet. Daily items and refills appear after one purchase.</td></tr>`;
+    }
+
+    $("reorder-body").addEventListener("click", (e) => {
+      const b = e.target.closest("button[data-act]"); if (!b) return;
+      const key = b.dataset.key, act = b.dataset.act;
+      if (act === "snooze") { const s = store.get("sc_snooze", {}); s[key] = Date.now() + 3 * 86400000; store.set("sc_snooze", s); }
+      else if (act === "got") { const s = store.get("sc_bought", {}); s[key] = Date.now(); store.set("sc_bought", s); }
+      else { const s = store.get("sc_kind", {}); s[key] = act; store.set("sc_kind", s); } // "durable" or "refill"
+      render();
+    });
+
+    const shoppingText = () => {
+      const due = reorderView.filter((x) => x.state === "due" || x.state === "soon");
+      return due.length ? "Smart Cart: running low\n" + due.map((x) => `• ${x.name.split("|")[0].trim()} - ${x.state === "due" ? "order now" : "~" + x.daysLeft + "d left"}`).join("\n") : "";
+    };
+    function copyList() {
+      const t = shoppingText(); if (!t) return alert("Nothing is running low right now.");
+      navigator.clipboard.writeText(t).then(() => alert("List copied."), () => prompt("Copy this list:", t));
+    }
+    function whatsappList() {
+      const t = shoppingText(); if (!t) return alert("Nothing is running low right now.");
+      const n = ($("wa-number").value || "").replace(/\D/g, "");
+      window.open("https://wa.me/" + n + "?text=" + encodeURIComponent(t), "_blank");
+    }
+
+    /* ---------------------------------------------------------------- price comparison */
+    function priceRows() { return allRows.filter((r) => r.platform !== "Amazon India" && num(r.price) > 0); }
+
+    function renderPricePicker() {
+      const sel = $("price-pick"), prev = sel.value;
+      const groups = new Map();
+      priceRows().forEach((r) => {
+        const k = r._key + "|" + r._pack;
+        if (!groups.has(k)) groups.set(k, { name: r.product_name.split("|")[0], pack: r._pack, n: 0, stores: new Set() });
+        const g = groups.get(k); g.n++; g.stores.add(r.platform);
+      });
+      const opts = [...groups.entries()].sort((a, b) => b[1].stores.size - a[1].stores.size || b[1].n - a[1].n);
+      sel.innerHTML = `<option value="">Pick an item to compare...</option>` + opts.map(([k, g]) =>
+        `<option value="${esc(k)}">${esc(g.name)} ${g.pack ? "(" + esc(g.pack) + ")" : ""} · ${g.stores.size} store${g.stores.size > 1 ? "s" : ""}</option>`).join("");
+      if (groups.has(prev)) sel.value = prev;
+      renderPrice();
+    }
+
+    function renderPrice() {
+      const key = $("price-pick").value, out = $("price-out");
+      if (!key) { out.innerHTML = `<div class="empty">Choose an item to see its price in each store and how it changed.</div>`; return; }
+      const rows = priceRows().filter((r) => r._key + "|" + r._pack === key).map((r) => ({ p: r.platform, d: r._date, u: num(r.price) / r._qty }))
+        .sort((a, b) => a.d - b.d);
+      const per = new Map();
+      rows.forEach((r) => { if (!per.has(r.p)) per.set(r.p, []); per.get(r.p).push(r); });
+      const cheapest = Math.min(...[...per.values()].map((a) => a[a.length - 1].u));
+      let html = `<div class="tw"><table style="min-width:420px"><thead><tr><th>Store</th><th>Latest price</th><th>Lowest</th><th>Times bought</th></tr></thead><tbody>` +
+        [...per.entries()].map(([p, a]) => {
+          const last = a[a.length - 1];
+          return `<tr><td><span class="dot" style="background:${STORE_COLORS[p] || "#64748b"}"></span>${esc(p)}</td>
+            <td>${inr(last.u)} ${last.u === cheapest && per.size > 1 ? `<span class="badge ok">cheapest</span>` : ""}<div class="sub">${fmtDate(last.d)}</div></td>
+            <td>${inr(Math.min(...a.map((x) => x.u)))}</td><td>${a.length}</td></tr>`;
+        }).join("") + `</tbody></table></div>`;
+      if (rows.length >= 2) html += priceChart(rows);
+      out.innerHTML = html + `<div class="sub">Price per unit (line price ÷ quantity), for the same pack size.</div>`;
+    }
+
+    function priceChart(rows) {
+      const W = 600, H = 170, pl = 38, pb = 20, pt = 8, pr = 8;
+      const t0 = rows[0].d.getTime(), t1 = rows[rows.length - 1].d.getTime() || t0 + 1;
+      const lo = Math.min(...rows.map((r) => r.u)), hi = Math.max(...rows.map((r) => r.u));
+      const span = hi - lo || 1;
+      const x = (t) => pl + ((t - t0) / ((t1 - t0) || 1)) * (W - pl - pr);
+      const y = (v) => pt + (1 - (v - lo) / span) * (H - pt - pb);
+      let svg = `<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-width:640px;margin-top:10px">
+        <line x1="${pl}" y1="${H - pb}" x2="${W - pr}" y2="${H - pb}" stroke="#334155"/>
+        <text x="2" y="${y(hi) + 3}">${inr(hi)}</text><text x="2" y="${y(lo) + 3}">${inr(lo)}</text>
+        <text x="${pl}" y="${H - 5}">${fmtDate(rows[0].d)}</text><text x="${W - pr}" y="${H - 5}" text-anchor="end">${fmtDate(rows[rows.length - 1].d)}</text>`;
+      const per = new Map();
+      rows.forEach((r) => { if (!per.has(r.p)) per.set(r.p, []); per.get(r.p).push(r); });
+      per.forEach((a, p) => {
+        const c = STORE_COLORS[p] || "#64748b";
+        if (a.length > 1) svg += `<polyline fill="none" stroke="${c}" stroke-width="2" points="${a.map((r) => x(r.d.getTime()) + "," + y(r.u)).join(" ")}"/>`;
+        a.forEach((r) => (svg += `<circle cx="${x(r.d.getTime())}" cy="${y(r.u)}" r="3.5" fill="${c}"/>`));
+      });
+      return svg + `</svg><div class="legend">${[...per.keys()].map((p) => `<span><span class="dot" style="background:${STORE_COLORS[p] || "#64748b"}"></span>${esc(p)}</span>`).join("")}</div>`;
+    }
+
+    /* ---------------------------------------------------------------- history + csv */
+    function renderHistory(filtered) {
+      $("hist-count").textContent = `showing ${Math.min(100, filtered.length)} of ${filtered.length}`;
+      $("history-body").innerHTML = filtered.length ? filtered.slice(0, 100).map((r) => `<tr>
+        <td>${esc(r.product_name)}</td><td>${esc(r.quantity || "1 unit")}</td><td>${num(r.price) ? "₹" + num(r.price) : "-"}</td>
+        <td>${esc(r.platform || "-")}</td><td>${esc(r.city || "-")}</td><td>${fmtDate(r._date)}</td></tr>`).join("")
+        : `<tr><td colspan="6" class="empty">No purchase records match these filters.</td></tr>`;
+    }
+
+    function exportCsv() {
+      const rows = allRows.filter((r) => baseFilter(r, { withMonth: true }));
+      const q = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+      const csv = ["Product,Quantity,Price,Store,City,Category,Date"].concat(rows.map((r) =>
+        [r.product_name, r.quantity, r.price, r.platform, r.city, r._cat, r._date.toISOString().slice(0, 10)].map(q).join(","))).join("\n");
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+      a.download = "smart-cart-purchases.csv";
+      a.click();
+    }
+
+    /* ---------------------------------------------------------------- wiring */
+    ["month-filter", "city-filter", "platform-filter", "cat-filter", "grocery-only", "show-once"].forEach((id) => $(id).addEventListener("change", render));
+    $("search-input").addEventListener("input", render);
+    $("price-pick").addEventListener("change", renderPrice);
+    $("wa-number").value = store.get("sc_wa", "");
+    $("wa-number").addEventListener("change", (e) => store.set("sc_wa", e.target.value));
+    $("budget-input").addEventListener("change", (e) => { store.set("sc_budget", num(e.target.value)); render(); });
+    $("by-month").addEventListener("click", (e) => {
+      const row = e.target.closest(".bar-row"); if (!row) return;
+      const k = row.dataset.key;
+      $("month-filter").value = $("month-filter").value === k ? "ALL" : k;
+      render();
+    });
+
+    loadPurchases();
+  </script>
+</body>
+</html>
